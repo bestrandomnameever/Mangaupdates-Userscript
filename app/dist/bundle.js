@@ -1,28 +1,47 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const axios_1 = require("axios");
+class Manga {
+    constructor(id) {
+        this.id = id;
+    }
+}
+exports.Manga = Manga;
+
+},{}],2:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var HttpConstants;
+(function (HttpConstants) {
+    HttpConstants.baseUrlMangaUpdates = "https://www.mangaupdates.com";
+    HttpConstants.releasesPage = "/releases.html";
+    HttpConstants.seriesDetailPage = "/series.html";
+})(HttpConstants = exports.HttpConstants || (exports.HttpConstants = {}));
+
+},{}],3:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const MUHttpService_1 = require("./services/MUHttpService");
 var PageInit;
 (function (PageInit) {
     const base = "https://www.mangaupdates.com/";
-    PageInit.old = document.createElement("div");
-    PageInit.main = document.createElement("main");
     function initPage(inDev) {
-        getOldHTMLTextPromise(inDev)
-            .then((oldHTMLText) => {
+        return getOldHTMLTextPromise(inDev)
+            .then((oldHTML) => {
             //Delete old body
             document.body.innerHTML = "";
             //Create elements to host old(invisible) and new html
-            PageInit.old.id = "old";
-            PageInit.old.innerHTML = oldHTMLText;
-            document.body.appendChild(PageInit.old);
-            document.body.appendChild(PageInit.main);
+            const main = document.createElement("main");
+            oldHTML.id = "old";
+            main.id = "main";
+            document.body.appendChild(oldHTML);
+            document.body.appendChild(main);
         });
     }
     PageInit.initPage = initPage;
     function getOldHTMLTextPromise(inDev) {
         if (inDev) {
-            return loadHTMLFromUrl("releases.html");
+            return MUHttpService_1.MUHttpService.loadReleasesPage();
         }
         else {
             return loadHTMLFromPage();
@@ -30,32 +49,162 @@ var PageInit;
     }
     function loadHTMLFromPage() {
         return new Promise(() => {
-            return document.getElementById("centered").innerHTML;
-        });
-    }
-    function loadHTMLFromUrl(pageUrl) {
-        return axios_1.default({
-            method: 'get',
-            baseURL: base,
-            url: pageUrl
-        }).then((res) => {
-            const tmpElem = document.createElement('div');
-            tmpElem.innerHTML = res.data;
-            return tmpElem.querySelector("div#centered").innerHTML;
+            return MUHttpService_1.MUHttpService.createElementFromHTMLString(document.getElementById("centered").innerHTML);
         });
     }
 })(PageInit = exports.PageInit || (exports.PageInit = {}));
 
-},{"axios":3}],2:[function(require,module,exports){
+},{"./services/MUHttpService":5}],4:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const MUParserService_1 = require("../services/MUParserService");
+class ReleasesBuilder {
+    constructor() {
+        this.oldDoc = document.getElementById("old");
+        this.ids = Array.from(this.oldDoc.querySelectorAll("td a[title='Series Info']")).map(el => {
+            return el.getAttribute("href").split("?id=")[1];
+        });
+        this.ids.forEach(id => {
+            MUParserService_1.MUParserService.getMangaWithId(id)
+                .then(manga => {
+                console.log(manga);
+            });
+        });
+    }
+}
+exports.ReleasesBuilder = ReleasesBuilder;
+
+},{"../services/MUParserService":6}],5:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const axios_1 = require("axios");
+const HttpConstants_1 = require("../constants/HttpConstants");
+var MUHttpService;
+(function (MUHttpService) {
+    function getHTMLMangaWithId(id) {
+        return axios_1.default({
+            method: "get",
+            baseURL: HttpConstants_1.HttpConstants.baseUrlMangaUpdates,
+            url: HttpConstants_1.HttpConstants.seriesDetailPage,
+            params: {
+                id: id
+            }
+        }).then(res => {
+            console.log([res.status, res.statusText]);
+            const doc = createElementFromHTMLString(res.data);
+            return doc;
+        }).catch(err => {
+            //Algemenere oplossing voor alle http methodes voor een max aantal keer te herproberen of excpetion gooien
+            return getHTMLMangaWithId(id);
+        });
+    }
+    MUHttpService.getHTMLMangaWithId = getHTMLMangaWithId;
+    function loadReleasesPage(page = 1, perPage = 25, orderBy = ReleasesOrderOptions.Date, orderAsc = false) {
+        return axios_1.default({
+            method: 'get',
+            baseURL: HttpConstants_1.HttpConstants.baseUrlMangaUpdates,
+            url: HttpConstants_1.HttpConstants.releasesPage,
+            params: {
+                page: page.toString(),
+                perpage: perPage.toString(),
+                act: "archive",
+                asc: orderAsc ? 'asc' : 'desc',
+                orderby: orderBy
+            }
+        }).then((res) => {
+            const doc = createElementFromHTMLString(res.data);
+            return doc;
+        });
+    }
+    MUHttpService.loadReleasesPage = loadReleasesPage;
+    // function transformSrcAttrToDataAttr(element:Element) {
+    //     Array.from(element.querySelectorAll("[src]")).forEach(el => {
+    //         el.setAttribute('data-src', el.getAttribute('src'));
+    //         el.setAttribute('src', "");
+    //     });
+    // }
+    function createElementFromHTMLString(HTML, replaceSrcWithData = true) {
+        const tmpElem = document.createElement('div');
+        if (replaceSrcWithData) {
+            tmpElem.innerHTML = transformSrcAttrToDataAttr(HTML);
+            ;
+        }
+        else {
+            tmpElem.innerHTML = HTML;
+        }
+        const element = document.createElement('div');
+        element.innerHTML = tmpElem.querySelector("div#centered").innerHTML;
+        return element;
+    }
+    MUHttpService.createElementFromHTMLString = createElementFromHTMLString;
+    function transformSrcAttrToDataAttr(html) {
+        const fixed = html.replace(new RegExp("src=", "g"), "data-src=");
+        return fixed;
+    }
+    let ReleasesOrderOptions;
+    (function (ReleasesOrderOptions) {
+        ReleasesOrderOptions["Title"] = "title";
+        ReleasesOrderOptions["Date"] = "date";
+        ReleasesOrderOptions["Volume"] = "vol";
+        ReleasesOrderOptions["Chapter"] = "chap";
+        ReleasesOrderOptions["Groups"] = "groups";
+    })(ReleasesOrderOptions || (ReleasesOrderOptions = {}));
+})(MUHttpService = exports.MUHttpService || (exports.MUHttpService = {}));
+
+},{"../constants/HttpConstants":2,"axios":8}],6:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const Manga_1 = require("../classes/Manga");
+const MUHttpService_1 = require("./MUHttpService");
+var MUParserService;
+(function (MUParserService) {
+    /**
+     * getMangaWithId
+     */
+    function getMangaWithId(id) {
+        return MUHttpService_1.MUHttpService.getHTMLMangaWithId(id)
+            .then(HTML => {
+            const manga = new Manga_1.Manga(id);
+            manga.title = HTML.getElementsByClassName("releasestitle")[0].textContent;
+            const descriptionElement = getElementWithHeader("Description", HTML);
+            manga.description = notAvailableIfNull(descriptionElement.textContent);
+            return manga;
+        });
+    }
+    MUParserService.getMangaWithId = getMangaWithId;
+    function getElementWithHeader(headerText, htmlDoc) {
+        const elements = htmlDoc.getElementsByClassName("sCat");
+        for (let i = 0; i < elements.length; i++) {
+            const el = elements[i];
+            if (el.textContent === headerText) {
+                return el.nextElementSibling;
+            }
+        }
+        return null;
+    }
+    function notAvailableIfNull(value) {
+        if (value != null) {
+            return value;
+        }
+        else {
+            return "Not available";
+        }
+    }
+})(MUParserService = exports.MUParserService || (exports.MUParserService = {}));
+
+},{"../classes/Manga":1,"./MUHttpService":5}],7:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const dev = true;
 const pageInit_1 = require("./js/pageInit");
-pageInit_1.PageInit.initPage(dev);
+const ReleasesBuilder_1 = require("./js/pagebuilders/ReleasesBuilder");
+pageInit_1.PageInit.initPage(dev).then(() => {
+    const builder = new ReleasesBuilder_1.ReleasesBuilder();
+});
 
-},{"./js/pageInit":1}],3:[function(require,module,exports){
+},{"./js/pageInit":3,"./js/pagebuilders/ReleasesBuilder":4}],8:[function(require,module,exports){
 module.exports = require('./lib/axios');
-},{"./lib/axios":5}],4:[function(require,module,exports){
+},{"./lib/axios":10}],9:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -240,7 +389,7 @@ module.exports = function xhrAdapter(config) {
 
 }).call(this,require('_process'))
 
-},{"../core/createError":11,"./../core/settle":14,"./../helpers/btoa":18,"./../helpers/buildURL":19,"./../helpers/cookies":21,"./../helpers/isURLSameOrigin":23,"./../helpers/parseHeaders":25,"./../utils":27,"_process":29}],5:[function(require,module,exports){
+},{"../core/createError":16,"./../core/settle":19,"./../helpers/btoa":23,"./../helpers/buildURL":24,"./../helpers/cookies":26,"./../helpers/isURLSameOrigin":28,"./../helpers/parseHeaders":30,"./../utils":32,"_process":34}],10:[function(require,module,exports){
 'use strict';
 
 var utils = require('./utils');
@@ -294,7 +443,7 @@ module.exports = axios;
 // Allow use of default import syntax in TypeScript
 module.exports.default = axios;
 
-},{"./cancel/Cancel":6,"./cancel/CancelToken":7,"./cancel/isCancel":8,"./core/Axios":9,"./defaults":16,"./helpers/bind":17,"./helpers/spread":26,"./utils":27}],6:[function(require,module,exports){
+},{"./cancel/Cancel":11,"./cancel/CancelToken":12,"./cancel/isCancel":13,"./core/Axios":14,"./defaults":21,"./helpers/bind":22,"./helpers/spread":31,"./utils":32}],11:[function(require,module,exports){
 'use strict';
 
 /**
@@ -315,7 +464,7 @@ Cancel.prototype.__CANCEL__ = true;
 
 module.exports = Cancel;
 
-},{}],7:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 'use strict';
 
 var Cancel = require('./Cancel');
@@ -374,14 +523,14 @@ CancelToken.source = function source() {
 
 module.exports = CancelToken;
 
-},{"./Cancel":6}],8:[function(require,module,exports){
+},{"./Cancel":11}],13:[function(require,module,exports){
 'use strict';
 
 module.exports = function isCancel(value) {
   return !!(value && value.__CANCEL__);
 };
 
-},{}],9:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 'use strict';
 
 var defaults = require('./../defaults');
@@ -462,7 +611,7 @@ utils.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
 
 module.exports = Axios;
 
-},{"./../defaults":16,"./../utils":27,"./InterceptorManager":10,"./dispatchRequest":12}],10:[function(require,module,exports){
+},{"./../defaults":21,"./../utils":32,"./InterceptorManager":15,"./dispatchRequest":17}],15:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -516,7 +665,7 @@ InterceptorManager.prototype.forEach = function forEach(fn) {
 
 module.exports = InterceptorManager;
 
-},{"./../utils":27}],11:[function(require,module,exports){
+},{"./../utils":32}],16:[function(require,module,exports){
 'use strict';
 
 var enhanceError = require('./enhanceError');
@@ -536,7 +685,7 @@ module.exports = function createError(message, config, code, request, response) 
   return enhanceError(error, config, code, request, response);
 };
 
-},{"./enhanceError":13}],12:[function(require,module,exports){
+},{"./enhanceError":18}],17:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -624,7 +773,7 @@ module.exports = function dispatchRequest(config) {
   });
 };
 
-},{"../cancel/isCancel":8,"../defaults":16,"./../helpers/combineURLs":20,"./../helpers/isAbsoluteURL":22,"./../utils":27,"./transformData":15}],13:[function(require,module,exports){
+},{"../cancel/isCancel":13,"../defaults":21,"./../helpers/combineURLs":25,"./../helpers/isAbsoluteURL":27,"./../utils":32,"./transformData":20}],18:[function(require,module,exports){
 'use strict';
 
 /**
@@ -647,7 +796,7 @@ module.exports = function enhanceError(error, config, code, request, response) {
   return error;
 };
 
-},{}],14:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 'use strict';
 
 var createError = require('./createError');
@@ -675,7 +824,7 @@ module.exports = function settle(resolve, reject, response) {
   }
 };
 
-},{"./createError":11}],15:[function(require,module,exports){
+},{"./createError":16}],20:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -697,7 +846,7 @@ module.exports = function transformData(data, headers, fns) {
   return data;
 };
 
-},{"./../utils":27}],16:[function(require,module,exports){
+},{"./../utils":32}],21:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -794,7 +943,7 @@ module.exports = defaults;
 
 }).call(this,require('_process'))
 
-},{"./adapters/http":4,"./adapters/xhr":4,"./helpers/normalizeHeaderName":24,"./utils":27,"_process":29}],17:[function(require,module,exports){
+},{"./adapters/http":9,"./adapters/xhr":9,"./helpers/normalizeHeaderName":29,"./utils":32,"_process":34}],22:[function(require,module,exports){
 'use strict';
 
 module.exports = function bind(fn, thisArg) {
@@ -807,7 +956,7 @@ module.exports = function bind(fn, thisArg) {
   };
 };
 
-},{}],18:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 'use strict';
 
 // btoa polyfill for IE<10 courtesy https://github.com/davidchambers/Base64.js
@@ -845,7 +994,7 @@ function btoa(input) {
 
 module.exports = btoa;
 
-},{}],19:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -915,7 +1064,7 @@ module.exports = function buildURL(url, params, paramsSerializer) {
   return url;
 };
 
-},{"./../utils":27}],20:[function(require,module,exports){
+},{"./../utils":32}],25:[function(require,module,exports){
 'use strict';
 
 /**
@@ -931,7 +1080,7 @@ module.exports = function combineURLs(baseURL, relativeURL) {
     : baseURL;
 };
 
-},{}],21:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -986,7 +1135,7 @@ module.exports = (
   })()
 );
 
-},{"./../utils":27}],22:[function(require,module,exports){
+},{"./../utils":32}],27:[function(require,module,exports){
 'use strict';
 
 /**
@@ -1002,7 +1151,7 @@ module.exports = function isAbsoluteURL(url) {
   return /^([a-z][a-z\d\+\-\.]*:)?\/\//i.test(url);
 };
 
-},{}],23:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -1072,7 +1221,7 @@ module.exports = (
   })()
 );
 
-},{"./../utils":27}],24:[function(require,module,exports){
+},{"./../utils":32}],29:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -1086,7 +1235,7 @@ module.exports = function normalizeHeaderName(headers, normalizedName) {
   });
 };
 
-},{"../utils":27}],25:[function(require,module,exports){
+},{"../utils":32}],30:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -1141,7 +1290,7 @@ module.exports = function parseHeaders(headers) {
   return parsed;
 };
 
-},{"./../utils":27}],26:[function(require,module,exports){
+},{"./../utils":32}],31:[function(require,module,exports){
 'use strict';
 
 /**
@@ -1170,7 +1319,7 @@ module.exports = function spread(callback) {
   };
 };
 
-},{}],27:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 'use strict';
 
 var bind = require('./helpers/bind');
@@ -1475,7 +1624,7 @@ module.exports = {
   trim: trim
 };
 
-},{"./helpers/bind":17,"is-buffer":28}],28:[function(require,module,exports){
+},{"./helpers/bind":22,"is-buffer":33}],33:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
@@ -1498,7 +1647,7 @@ function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
 
-},{}],29:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -1684,6 +1833,6 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}]},{},[2])
+},{}]},{},[7])
 
 //# sourceMappingURL=bundle.js.map

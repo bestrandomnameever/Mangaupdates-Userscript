@@ -1,47 +1,36 @@
 import axios from 'axios';
+import { MUHttpService } from './services/MUHttpService';
 
 export module PageInit {
     const base = "https://www.mangaupdates.com/";
-    export const old = document.createElement("div");
-    export const main = document.createElement("main");
 
-    export function initPage(inDev: boolean) {
-        getOldHTMLTextPromise(inDev)
-            .then((oldHTMLText) => {
+    export function initPage(inDev: boolean): Promise<void> {
+        return getOldHTMLTextPromise(inDev)
+            .then((oldHTML) => {
                 //Delete old body
                 document.body.innerHTML = "";
                 //Create elements to host old(invisible) and new html
-                old.id = "old";
-                old.innerHTML = oldHTMLText;
+                const main = document.createElement("main");
 
-                document.body.appendChild(old);
+                oldHTML.id = "old";
+                main.id = "main";
+
+                document.body.appendChild(oldHTML);
                 document.body.appendChild(main);
-            })
+            });
     }
 
-    function getOldHTMLTextPromise(inDev: boolean): Promise<string> {
+    function getOldHTMLTextPromise(inDev: boolean): Promise<Element> {
         if (inDev) {
-            return loadHTMLFromUrl("releases.html");
+            return MUHttpService.loadReleasesPage();
         } else {
             return loadHTMLFromPage()
         }
     }
 
-    function loadHTMLFromPage(): Promise<string> {
-        return new Promise<string>(() => {
-            return document.getElementById("centered").innerHTML;
-        });
-    }
-
-    function loadHTMLFromUrl(pageUrl: string): Promise<string> {
-        return axios({
-            method: 'get',
-            baseURL: base,
-            url: pageUrl
-        }).then((res) => {
-            const tmpElem = document.createElement('div');
-            tmpElem.innerHTML = res.data;
-            return tmpElem.querySelector("div#centered").innerHTML;
+    function loadHTMLFromPage(): Promise<Element> {
+        return new Promise<Element>(() => {
+            return MUHttpService.createElementFromHTMLString(document.getElementById("centered").innerHTML);
         });
     }
 }
